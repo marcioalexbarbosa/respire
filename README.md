@@ -30,6 +30,16 @@ Basta abrir o `index.html` no navegador. Não precisa de servidor nem build — 
 xdg-open index.html
 ```
 
+## Deploy
+
+O site é hospedado em S3 + CloudFront. Para publicar uma alteração, basta rodar:
+
+```bash
+./deploy.sh
+```
+
+O script sobe o `index.html` para o bucket S3 e invalida o cache do CloudFront. Depois aguarde ~1-2 min e dê um **reload forçado** no navegador (o Safari/iPad costuma segurar a versão antiga em cache).
+
 ## Tecnologia
 
 HTML, CSS e JavaScript puro (vanilla), em um só arquivo. Sem dependências.

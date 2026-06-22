@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs / temporários
+*.log
+tmp/
+.cache/
+
+# Dependências (caso o projeto cresça)
+node_modules/
+
+# Artefatos de deploy AWS (gerados localmente)
+aws/
+*.cloudfront.json
+cf-config.json

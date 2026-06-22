@@ -70,8 +70,10 @@
 
   .orb-wrap {
     position: relative;
+    /* quadrado explícito (largura == altura) em vez de aspect-ratio,
+       para o Safari/iPad não sair do quadrado e desalinhar o anel */
     width: min(72vw, 56vh, 360px);
-    aspect-ratio: 1;
+    height: min(72vw, 56vh, 360px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -102,9 +104,8 @@
   }
 
   .orb {
-    position: absolute;
-    inset: 0;
-    margin: auto;
+    /* centralizado pelo flexbox do .orb-wrap (rock-solid no Safari),
+       em vez de inset:0 + margin:auto que o Safari/iPad desalinhava */
     width: 38%;
     height: 38%;
     border-radius: 50%;

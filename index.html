@@ -12,6 +12,8 @@
     --exhale: 8;
     --accent: #6fd6ff;
     --accent-2: #b08bff;
+    --glow1: 111,214,255;
+    --glow2: 176,139,255;
     --bg-0: #070b1a;
     --bg-1: #0e1530;
     --text: #eaf2ff;
@@ -100,8 +102,11 @@
     stroke: url(#grad);
     stroke-linecap: round;
     transition: stroke-dashoffset 0.1s linear;
-    filter: drop-shadow(0 0 6px rgba(111,214,255,0.5));
+    filter: drop-shadow(0 0 6px rgba(var(--glow1),0.5));
   }
+  /* gradiente do anel segue o tema */
+  #grad .g1 { stop-color: var(--accent); }
+  #grad .g2 { stop-color: var(--accent-2); }
 
   .orb {
     /* centralizado pelo flexbox do .orb-wrap (rock-solid no Safari),
@@ -114,8 +119,8 @@
       radial-gradient(circle at 35% 30%, rgba(255,255,255,0.9), rgba(255,255,255,0.15) 35%, transparent 60%),
       radial-gradient(circle at 50% 50%, var(--accent), var(--accent-2));
     box-shadow:
-      0 0 60px 10px rgba(111,214,255,0.35),
-      0 0 120px 30px rgba(176,139,255,0.2),
+      0 0 60px 10px rgba(var(--glow1),0.35),
+      0 0 120px 30px rgba(var(--glow2),0.2),
       inset 0 0 40px rgba(255,255,255,0.25);
     /* centered via inset:0 + margin:auto; only scale is animated */
     transform: scale(var(--scale, 0.55));
@@ -212,7 +217,7 @@
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: #0a1026;
     border: none;
-    box-shadow: 0 8px 24px rgba(111,214,255,0.3);
+    box-shadow: 0 8px 24px rgba(var(--glow1),0.3);
   }
 
   .opts {
@@ -235,6 +240,36 @@
     width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;
   }
 
+  /* ---- Seletor de tema ---- */
+  .themes {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .themes .lbl {
+    color: var(--muted);
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+    margin-right: 2px;
+  }
+  .swatch {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    backdrop-filter: none;
+  }
+  .swatch:hover { transform: scale(1.12); background: inherit; }
+  .swatch[aria-checked="true"] {
+    border-color: #fff;
+    transform: scale(1.12);
+    box-shadow: 0 0 10px rgba(255,255,255,0.4);
+  }
+
   @media (max-height: 620px) {
     header p { display: none; }
     .hint { display: none; }
@@ -252,8 +287,8 @@
       <svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
         <defs>
           <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#6fd6ff"/>
-            <stop offset="100%" stop-color="#b08bff"/>
+            <stop class="g1" offset="0%" stop-color="#6fd6ff"/>
+            <stop class="g2" offset="100%" stop-color="#b08bff"/>
           </linearGradient>
         </defs>
         <circle class="track" cx="50" cy="50" r="48"/>
@@ -292,10 +327,61 @@
         Som
       </label>
     </div>
+    <div class="themes" id="themes" role="radiogroup" aria-label="Tema">
+      <span class="lbl">Tema</span>
+    </div>
   </div>
 
 <script>
 (() => {
+  // ---- Temas (só mudam círculos, texto e brilho; fundo continua escuro) ----
+  const THEMES = [
+    { id: "aurora", name: "Aurora",  accent: "#6fd6ff", accent2: "#b08bff", text: "#eaf2ff", muted: "#8ea0c9", glow1: "111,214,255", glow2: "176,139,255" },
+    { id: "sunset", name: "Pôr do sol", accent: "#ffb37a", accent2: "#ff7eb0", text: "#ffeede", muted: "#c9a8a8", glow1: "255,179,122", glow2: "255,126,176" },
+    { id: "mint",   name: "Menta",   accent: "#6affc8", accent2: "#58d7ff", text: "#e6fff7", muted: "#8ec9bf", glow1: "106,255,200", glow2: "88,215,255" },
+    { id: "rose",   name: "Rosé",    accent: "#ff9ec4", accent2: "#c9a0ff", text: "#ffeaf4", muted: "#c5a0bf", glow1: "255,158,196", glow2: "201,160,255" },
+    { id: "gold",   name: "Ouro",    accent: "#ffe08a", accent2: "#ffac5f", text: "#fff7e0", muted: "#c9bb8e", glow1: "255,224,138", glow2: "255,172,95" },
+  ];
+
+  function applyTheme(t) {
+    const r = document.documentElement.style;
+    r.setProperty("--accent", t.accent);
+    r.setProperty("--accent-2", t.accent2);
+    r.setProperty("--text", t.text);
+    r.setProperty("--muted", t.muted);
+    r.setProperty("--glow1", t.glow1);
+    r.setProperty("--glow2", t.glow2);
+  }
+
+  function initThemes() {
+    const wrap = document.getElementById("themes");
+    let saved = "aurora";
+    try { saved = localStorage.getItem("breathe-theme") || "aurora"; } catch (e) {}
+    if (!THEMES.some(t => t.id === saved)) saved = "aurora";
+
+    THEMES.forEach(t => {
+      const b = document.createElement("button");
+      b.className = "swatch";
+      b.type = "button";
+      b.role = "radio";
+      b.title = t.name;
+      b.setAttribute("aria-label", t.name);
+      b.style.background = `linear-gradient(135deg, ${t.accent}, ${t.accent2})`;
+      b.setAttribute("aria-checked", String(t.id === saved));
+      b.addEventListener("click", () => {
+        applyTheme(t);
+        try { localStorage.setItem("breathe-theme", t.id); } catch (e) {}
+        wrap.querySelectorAll(".swatch").forEach(s => s.setAttribute("aria-checked", "false"));
+        b.setAttribute("aria-checked", "true");
+      });
+      wrap.appendChild(b);
+    });
+
+    const t = THEMES.find(x => x.id === saved);
+    if (t) applyTheme(t);
+  }
+  initThemes();
+
   const INHALE = 4, HOLD = 7, EXHALE = 8;
 
   const PHASES = [

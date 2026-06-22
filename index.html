@@ -80,7 +80,13 @@
   /* progress ring */
   .ring {
     position: absolute;
-    inset: -6%;
+    /* explicit size + offset instead of inset alone: Safari/iOS ignores
+       inset on an <svg> with no width/height and falls back to its 300x150
+       intrinsic size, throwing the ring up and to the right */
+    top: -6%;
+    left: -6%;
+    width: 112%;
+    height: 112%;
     transform: rotate(-90deg);
   }
   .ring circle {

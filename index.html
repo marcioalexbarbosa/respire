@@ -3,13 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#0a1026" />
+<meta name="theme-color" content="#070b1a" />
+<meta name="color-scheme" content="dark" />
+<meta name="description" content="Guia visual para a técnica de respiração 4-7-8: inspire 4, segure 7, expire 8. Funciona offline e pode ser instalado no celular." />
 <title>Respiração 4-7-8</title>
+
+<!-- PWA (caminhos relativos p/ funcionar também abrindo o arquivo local) -->
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" href="icons/icon-192.png" sizes="192x192" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Respire" />
 <style>
   :root {
-    --inhale: 4;
-    --hold: 7;
-    --exhale: 8;
     --accent: #6fd6ff;
     --accent-2: #b08bff;
     --glow1: 111,214,255;
@@ -22,7 +31,12 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  html, body { height: 100%; }
+  html, body {
+    height: 100%;
+    /* no app instalado (e no Chrome mobile) evita o "puxar p/ recarregar"
+       e o balanço elástico durante a sessão */
+    overscroll-behavior: none;
+  }
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -36,10 +50,16 @@
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
-    padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+    /* soma (em vez de max) as áreas seguras: no app instalado do iOS a barra
+       de status é translúcida e fica por cima do conteúdo */
+    padding:
+      calc(20px + env(safe-area-inset-top, 0px)) 20px
+      calc(20px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
     user-select: none;
+    touch-action: manipulation; /* mata o zoom por duplo toque */
   }
 
   header {
@@ -270,9 +290,36 @@
     box-shadow: 0 0 10px rgba(255,255,255,0.4);
   }
 
+  /* botão de instalar (só aparece quando o navegador oferece a instalação) */
+  .install {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--muted);
+    border-radius: 14px;
+    border-style: dashed;
+    background: transparent;
+  }
+  .install:hover { background: rgba(255,255,255,0.06); }
+
+  [hidden] { display: none !important; }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .orb.calm { animation: none; }
+    button { transition: none; }
+  }
+
   @media (max-height: 620px) {
     header p { display: none; }
     .hint { display: none; }
+    .install { display: none; }
   }
 </style>
 </head>
@@ -297,9 +344,9 @@
 
       <div class="orb calm" id="orb"></div>
 
-      <div class="center-text">
+      <div class="center-text" role="status" aria-live="polite" aria-atomic="true">
         <div class="phase" id="phase">Pronto</div>
-        <div class="count" id="count">4-7-8</div>
+        <div class="count" id="count" aria-hidden="true">4-7-8</div>
         <div class="hint" id="hint">Toque em Iniciar para começar</div>
       </div>
     </div>
@@ -330,10 +377,28 @@
     <div class="themes" id="themes" role="radiogroup" aria-label="Tema">
       <span class="lbl">Tema</span>
     </div>
+    <button class="install" id="installBtn" type="button" hidden>
+      ⤓&nbsp; Instalar no dispositivo
+    </button>
   </div>
 
 <script>
 (() => {
+  "use strict";
+
+  // ---- preferências (localStorage pode estar bloqueado: nunca quebrar) ----
+  const store = {
+    get(key, fallback) {
+      try {
+        const v = localStorage.getItem(key);
+        return v === null ? fallback : v;
+      } catch (e) { return fallback; }
+    },
+    set(key, value) {
+      try { localStorage.setItem(key, String(value)); } catch (e) {}
+    },
+  };
+
   // ---- Temas (só mudam círculos, texto e brilho; fundo continua escuro) ----
   const THEMES = [
     { id: "aurora", name: "Aurora",  accent: "#6fd6ff", accent2: "#b08bff", text: "#eaf2ff", muted: "#8ea0c9", glow1: "111,214,255", glow2: "176,139,255" },
@@ -355,22 +420,23 @@
 
   function initThemes() {
     const wrap = document.getElementById("themes");
-    let saved = "aurora";
-    try { saved = localStorage.getItem("breathe-theme") || "aurora"; } catch (e) {}
+    let saved = store.get("breathe-theme", "aurora");
     if (!THEMES.some(t => t.id === saved)) saved = "aurora";
 
     THEMES.forEach(t => {
       const b = document.createElement("button");
       b.className = "swatch";
       b.type = "button";
-      b.role = "radio";
+      // setAttribute (e não b.role): o Safari mais antigo não reflete a
+      // propriedade .role e ficaria sem semântica de radio
+      b.setAttribute("role", "radio");
       b.title = t.name;
       b.setAttribute("aria-label", t.name);
       b.style.background = `linear-gradient(135deg, ${t.accent}, ${t.accent2})`;
       b.setAttribute("aria-checked", String(t.id === saved));
       b.addEventListener("click", () => {
         applyTheme(t);
-        try { localStorage.setItem("breathe-theme", t.id); } catch (e) {}
+        store.set("breathe-theme", t.id);
         wrap.querySelectorAll(".swatch").forEach(s => s.setAttribute("aria-checked", "false"));
         b.setAttribute("aria-checked", "true");
       });
@@ -390,15 +456,16 @@
     { name: "Expire",   secs: EXHALE, scale: 0.5,  hint: "Solte o ar pela boca, devagar", cls: "exhale" },
   ];
 
-  const orb    = document.getElementById("orb");
-  const phaseEl = document.getElementById("phase");
-  const countEl = document.getElementById("count");
-  const hintEl  = document.getElementById("hint");
+  const orb      = document.getElementById("orb");
+  const phaseEl  = document.getElementById("phase");
+  const countEl  = document.getElementById("count");
+  const hintEl   = document.getElementById("hint");
   const cyclesEl = document.getElementById("cycles");
   const startBtn = document.getElementById("startBtn");
   const resetBtn = document.getElementById("resetBtn");
   const goalSel  = document.getElementById("goalSelect");
   const soundTgl = document.getElementById("soundToggle");
+  const installBtn = document.getElementById("installBtn");
   const prog     = document.querySelector(".ring .prog");
 
   // ring circumference (r=48)
@@ -406,19 +473,29 @@
   prog.style.strokeDasharray = C;
   prog.style.strokeDashoffset = C;
 
-  let running = false;
+  let state = "idle"; // idle | running | paused
   let phaseIdx = 0;
   let cycle = 0;
   let goal = 4;
   let phaseStart = 0;
+  let pausedElapsed = 0;
+  let lastTick = 0;
   let rafId = null;
   let audioCtx = null;
+  let wakeLock = null;
+  let pendingReload = false;
 
   function setGoal() {
-    goal = parseInt(goalSel.value, 10);
+    goal = parseInt(goalSel.value, 10) || 0;
     cyclesEl.innerHTML = goal === 0
       ? `Meta: <b>∞</b> &middot; relaxe o quanto quiser`
       : `Meta: <b>${goal}</b> ciclo${goal > 1 ? "s" : ""}`;
+  }
+
+  function showCycle() {
+    cyclesEl.innerHTML = goal === 0
+      ? `Ciclo <b>${cycle + 1}</b> &middot; relaxe`
+      : `Ciclo <b>${cycle + 1}</b> de <b>${goal}</b>`;
   }
 
   // ---- soft tone cue on phase change ----
@@ -444,6 +521,26 @@
     if (navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {}
   }
 
+  // ---- mantém a tela acesa durante a sessão (quando o navegador suporta) ----
+  async function keepAwake() {
+    try {
+      if (!("wakeLock" in navigator) || wakeLock) return;
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } catch (e) { /* sem wake lock: segue normal */ }
+  }
+
+  function letSleep() {
+    try { if (wakeLock) wakeLock.release(); } catch (e) {}
+    wakeLock = null;
+  }
+
+  // aplica o tamanho-alvo do orb com a duração desejada
+  function animateOrb(p, dur) {
+    orb.style.setProperty("--phase-dur", dur + "s");
+    orb.style.setProperty("--scale", String(p.scale));
+  }
+
   function enterPhase(idx) {
     phaseIdx = idx;
     const p = PHASES[idx];
@@ -452,9 +549,7 @@
     phaseEl.textContent = p.name;
     hintEl.textContent = p.hint;
 
-    // animate the orb over the phase duration
-    orb.style.setProperty("--phase-dur", p.secs + "s");
-    orb.style.setProperty("--scale", p.scale);
+    animateOrb(p, p.secs);
 
     // cue
     const freqs = [440, 392, 294]; // inhale / hold / exhale
@@ -463,7 +558,17 @@
   }
 
   function loop(now) {
-    if (!running) return;
+    if (state !== "running") return;
+
+    // O requestAnimationFrame congela quando a tela apaga ou o aparelho
+    // dorme. Sem isso, ao voltar o app dispararia de uma vez todas as fases
+    // "atrasadas". Buraco maior que meio segundo = pausa e espera o usuário.
+    if (lastTick && now - lastTick > 1000) {
+      pause(lastTick); // retoma de onde realmente parou, não do buraco
+      return;
+    }
+    lastTick = now;
+
     const p = PHASES[phaseIdx];
     const elapsed = (now - phaseStart) / 1000;
     const remain = Math.max(0, p.secs - elapsed);
@@ -484,9 +589,7 @@
           finish();
           return;
         }
-        cyclesEl.innerHTML = goal === 0
-          ? `Ciclo <b>${cycle + 1}</b> &middot; relaxe`
-          : `Ciclo <b>${cycle + 1}</b> de <b>${goal}</b>`;
+        showCycle();
       }
       enterPhase(next);
     }
@@ -494,50 +597,67 @@
   }
 
   function start() {
-    if (running) return;
-    running = true;
+    if (state === "running") return;
+    state = "running";
+    lastTick = 0;
     cycle = 0;
     setGoal();
     orb.classList.remove("calm");
     startBtn.textContent = "Pausar";
     startBtn.classList.remove("primary");
-    cyclesEl.innerHTML = goal === 0
-      ? `Ciclo <b>1</b> &middot; relaxe`
-      : `Ciclo <b>1</b> de <b>${goal}</b>`;
+    showCycle();
+    keepAwake();
     enterPhase(0);
     rafId = requestAnimationFrame(loop);
   }
 
-  function pause() {
-    running = false;
+  function pause(atTime) {
+    if (state !== "running") return;
+    state = "paused";
+    lastTick = 0;
     if (rafId) cancelAnimationFrame(rafId);
+    // guarda quanto já correu da fase, pra retomar exatamente daqui
+    const at = typeof atTime === "number" ? atTime : performance.now();
+    pausedElapsed = Math.min(PHASES[phaseIdx].secs, Math.max(0, (at - phaseStart) / 1000));
     startBtn.textContent = "Continuar";
     startBtn.classList.add("primary");
     phaseEl.textContent = "Pausado";
     hintEl.textContent = "Toque em Continuar para seguir";
+    letSleep();
     // freeze orb at current size
     const cs = getComputedStyle(orb).transform;
-    orb.style.setProperty("--phase-dur", "0.4s");
+    orb.style.setProperty("--phase-dur", "0.3s");
     orb.style.transform = cs;
   }
 
   function resume() {
-    if (running) return;
-    running = true;
+    if (state !== "paused") return;
+    state = "running";
+    lastTick = 0;
     startBtn.textContent = "Pausar";
     startBtn.classList.remove("primary");
-    // restart current phase cleanly
+
+    // retoma a fase de onde parou (não do começo)
+    const p = PHASES[phaseIdx];
+    const remain = Math.max(0.2, p.secs - pausedElapsed);
+    phaseEl.textContent = p.name;
+    hintEl.textContent = p.hint;
     orb.style.transform = "";
-    enterPhase(phaseIdx);
+    animateOrb(p, remain);
+    phaseStart = performance.now() - pausedElapsed * 1000;
+
+    keepAwake();
     rafId = requestAnimationFrame(loop);
   }
 
   function finish() {
-    running = false;
+    state = "idle";
+    lastTick = 0;
     if (rafId) cancelAnimationFrame(rafId);
+    letSleep();
     orb.classList.add("calm");
     orb.style.transform = "";
-    orb.style.setProperty("--scale", 0.55);
+    orb.style.setProperty("--scale", "0.55");
     phaseEl.textContent = "Concluído";
     countEl.textContent = "✓";
     hintEl.textContent = "Muito bem. Perceba como você se sente.";
@@ -550,13 +670,16 @@
   }
 
   function reset() {
-    running = false;
+    state = "idle";
+    lastTick = 0;
     if (rafId) cancelAnimationFrame(rafId);
+    letSleep();
     cycle = 0;
     phaseIdx = 0;
+    pausedElapsed = 0;
     orb.classList.add("calm");
     orb.style.transform = "";
-    orb.style.setProperty("--scale", 0.55);
+    orb.style.setProperty("--scale", "0.55");
     phaseEl.textContent = "Pronto";
     countEl.textContent = "4-7-8";
     hintEl.textContent = "Toque em Iniciar para começar";
@@ -564,23 +687,113 @@
     startBtn.classList.add("primary");
     prog.style.strokeDashoffset = C;
     setGoal();
+    applyPendingReload();
   }
 
-  startBtn.addEventListener("click", () => {
-    if (!running && startBtn.textContent === "Iniciar") start();
-    else if (running) pause();
-    else resume();
-  });
+  function toggle() {
+    if (state === "running") pause();
+    else if (state === "paused") resume();
+    else start();
+  }
+
+  startBtn.addEventListener("click", toggle);
   resetBtn.addEventListener("click", reset);
-  goalSel.addEventListener("change", () => { if (!running) setGoal(); });
+  goalSel.addEventListener("change", () => {
+    store.set("breathe-goal", goalSel.value);
+    if (state === "idle") setGoal();
+  });
+  soundTgl.addEventListener("change", () => store.set("breathe-sound", soundTgl.checked ? "1" : "0"));
 
-  // spacebar toggles
+  // atalhos de teclado (sem atrapalhar quem está usando os controles)
   document.addEventListener("keydown", (e) => {
-    if (e.code === "Space") { e.preventDefault(); startBtn.click(); }
-    if (e.key.toLowerCase() === "r") reset();
+    const t = e.target;
+    if (t && (t.tagName === "BUTTON" || t.tagName === "SELECT" ||
+              t.tagName === "INPUT" || t.isContentEditable)) return;
+    if (e.code === "Space" || e.key === " ") { e.preventDefault(); toggle(); }
+    else if (e.key && e.key.toLowerCase() === "r") { e.preventDefault(); reset(); }
   });
 
+  // Sair da aba congela o requestAnimationFrame: sem isso, ao voltar o app
+  // dispararia todas as fases atrasadas de uma vez. Pausa e espera o usuário.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (state === "running") pause();
+    } else if (state === "idle") {
+      applyPendingReload();
+    }
+  });
+
+  // ---- estado inicial: preferências salvas + parâmetros do atalho ----
+  const params = new URLSearchParams(location.search);
+  const wantedGoal = params.get("ciclos") || store.get("breathe-goal", null);
+  if (wantedGoal !== null &&
+      Array.prototype.some.call(goalSel.options, (o) => o.value === wantedGoal)) {
+    goalSel.value = wantedGoal;
+  }
+  soundTgl.checked = store.get("breathe-sound", "0") === "1";
   setGoal();
+  if (params.get("auto") === "1") start();
+
+  // ---- instalação (Android/Chrome oferece o prompt nativo) ----
+  let installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    installBtn.hidden = false;
+  });
+  installBtn.addEventListener("click", async () => {
+    installBtn.hidden = true;
+    if (!installPrompt) return;
+    try {
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+    } catch (e) { /* ignore */ }
+    installPrompt = null;
+  });
+  window.addEventListener("appinstalled", () => {
+    installPrompt = null;
+    installBtn.hidden = true;
+  });
+
+  function applyPendingReload() {
+    if (pendingReload) {
+      pendingReload = false;
+      location.reload();
+    }
+  }
+
+  // ---- service worker: funciona offline e se atualiza sozinho ----
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    window.addEventListener("load", async () => {
+      try {
+        const reg = await navigator.serviceWorker.register("sw.js", { updateViaCache: "none" });
+
+        const promote = (worker) => {
+          if (worker && worker.state === "installed" && navigator.serviceWorker.controller) {
+            worker.postMessage("SKIP_WAITING");
+          }
+        };
+        promote(reg.waiting);
+        reg.addEventListener("updatefound", () => {
+          const w = reg.installing;
+          if (w) w.addEventListener("statechange", () => promote(w));
+        });
+
+        let swapped = false;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (swapped) return;
+          swapped = true;
+          // nunca recarregar no meio de uma sessão de respiração
+          if (state === "idle") location.reload();
+          else pendingReload = true;
+        });
+
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) reg.update().catch(() => {});
+        });
+      } catch (e) { /* sem service worker: o app funciona igual, só sem offline */ }
+    });
+  }
 })();
 </script>
 </body>
